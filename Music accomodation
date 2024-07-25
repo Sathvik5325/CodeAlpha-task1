@@ -1,0 +1,81 @@
+!pip install pandas numpy scikit-learn
+import pandas as pd
+
+# Load CSV into DataFrame
+data = pd.read_csv('user_song_interactions.csv')
+
+# Display the first few rows to verify data loading
+print(data.head())
+# Display information about the DataFrame
+print(data.info())
+
+# Display descriptive statistics of the DataFrame
+print(data.describe()) 
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, roc_auc_score
+
+# Load dataset
+data = pd.read_csv('user_song_interactions.csv')
+
+# Feature engineering
+data['day_of_week'] = pd.to_datetime(data['timestamp']).dt.dayofweek
+data['hour_of_day'] = pd.to_datetime(data['timestamp']).dt.hour
+
+# Aggregate features
+agg_features = data.groupby(['user_id', 'song_id']).agg(
+    total_play_count=('play_count', 'sum'),
+    recent_play_count=('play_count', lambda x: x.iloc[-1]),
+    mean_play_count=('play_count', 'mean'),
+    day_of_week=('day_of_week', 'mean'),
+    hour_of_day=('hour_of_day', 'mean'),
+).reset_index()
+
+# Merge with target
+agg_features = agg_features.merge(data[['user_id', 'song_id', 'replayed_within_month']].drop_duplicates(), on=['user_id', 'song_id'])
+
+# Sample song data (for demonstration purposes)
+songs_data = {
+    'song_id': [101, 102, 103, 104, 105],
+    'artist': ['sunnyM.R' ,'Slander', 'ShaeGill', 'Arijit Singh', 'Srinisha Jayaseelan'],
+    'title': ['Anuvanuvuu','Love is gone', 'Pasoori', 'Tum hi ho', 'Adi penne'],
+    'duration_seconds': [240, 210, 300, 180, 270]
+}
+
+songs_df = pd.DataFrame(songs_data)
+# Function to generate top-N recommendations for a user
+def recommend_songs(user_id, N=5):
+    user_data = data[data['user_id'] == user_id]
+    user_songs = user_data[['song_id']].drop_duplicates()
+    
+    # Merge user data with song features
+    user_features = user_songs.merge(agg_features, on='song_id').drop(['user_id', 'replayed_within_month', 'song_id'], axis=1)
+    
+    # Check if user has any song interactions
+    if user_features.empty:
+        print(f"No songs found for user {user_id}.")
+        # Return a default list of recommendations
+        default_recommendations = songs_df.sample(N)  # Sample N random songs as default recommendations
+        return default_recommendations
+    
+    # Scale features using the same scaler used during training
+    user_features_scaled = scaler.transform(user_features)
+    
+    # Predict replay probability
+    user_songs['replay_probability'] = model.predict_proba(user_features_scaled)[:, 1]
+    
+    # Recommend top-N songs
+    recommendations = user_songs.sort_values(by='replay_probability', ascending=False).head(N)
+    
+    # Merge recommendations with song data for more details
+    recommendations_with_details = recommendations.merge(songs_df, on='song_id')
+    
+    return recommendations_with_details[['song_id', 'artist', 'title', 'genre', 'duration_seconds', 'replay_probability']]
+
+# Example usage
+user_id = 12345  # Replace with a valid user ID from your dataset
+recommended_songs = recommend_songs(user_id, N=5)
+print(f"Top 5 recommended songs for user {user_id}:\n{recommended_songs}")
